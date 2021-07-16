@@ -29,7 +29,7 @@ const urlAi = async()=> {
 }
 
 const PredictionAi = async(url, payload) => {
-    const data = url.split(":")[2].split('/')[0] !== "5006"
+    const data = url.split(":")[2].split('/')[0] !== process.env.PNEUMONIA
     ? JSON.stringify({"img_pred": payload})
     : JSON.stringify({"image_base64": payload})
 
