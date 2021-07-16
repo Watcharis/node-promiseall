@@ -45,7 +45,14 @@ const PredictionAi = async(url, payload) => {
     return result
 }
 
-const TuberculosisFrame = async(payload)=>{
+const encodeImgToBase64 = async() => {
+    const pathFolder = path.dirname(__filename)
+    let image = path.join(pathFolder, "./343050.jpg")
+    const imgBase64 = await imageToBase64(image).then(response => response)
+    return imgBase64
+} 
+
+const TuberculosisFrame = (payload)=>{
     let config = {
         method: 'post',
         url: process.env.URL_TUBERCULOSIS_AI,
@@ -54,53 +61,52 @@ const TuberculosisFrame = async(payload)=>{
         },
         data: JSON.stringify({"image_base64": payload})
     }
-    const result = await axios(config).then(response => response).catch(e => e.message)
-    return result
+    const result = axios(config).then(response => response).catch(e => e.message)
+    return Promise.resolve(result)
 }
 
-const encodeImgToBase64 = async() => {
-    const pathFolder = path.dirname(__filename)
-    let image = path.join(pathFolder, "./343050.jpg")
-    const imgBase64 = await imageToBase64(image).then(response => response)
-    return imgBase64
-} 
+const ResultTuberculosisFrame = async(imgBase64) => {
+    return TuberculosisFrame(imgBase64)
+}
 
 app.get("/nodepromise", async(req, res)=> {
     const urls = await urlAi()
     const payloadImgBase64 = await encodeImgToBase64()
     if (payloadImgBase64 !== "" && urls.length === portAi.length){
-        await Promise.all(urls.map(url=> PredictionAi(url, payloadImgBase64)))
-        .then((value) => {
-            // console.log(value)
-            const resultProcess = value.map(_r => {
-    
+
+        await Promise.all(urls.map(url=> PredictionAi(url, payloadImgBase64).then(response=>response)))
+        .then(async(value) => {
+
+            // map() จะไม่รอการทำงานใดๆ เราจึงต้องใช้ Promise.all() มา ครอบ เพื่อถอดค่า
+            //ref https://flaviocopes.com/javascript-async-await-array-map/
+            const resultProcess = await Promise.all(value.map(async(_r) => {
+
                 //เอา keys heatmap ออก
                 delete _r.data[Object.keys(_r.data)[Object.keys(_r.data).length - 1]]
-    
+                
                 //เช็ค keys normal
-                const checkNormal = Object.keys(_r.data).includes("normal") 
-                ? parseFloat(_r.data.normal) 
-                : (1 - parseFloat(_r.data.result))*100
-    
-                //เป็นโรคถ้า เปอร์เซ็น normal ไม่ถึง 50
-                if (checkNormal < 50) {
-    
-                    //เช็คว่าเป็น tuberculosis หรือไม่เพื่อไปเอาภาพตีกรอบ
-                    if (Object.keys(_r.data).includes("tuberculosis")){
-    
-                        //ไปเอานรูปที่ตีกรอบ จาก tuberculosis
-                        const getFrame = TuberculosisFrame(payloadImgBase64)
-                        _r.data.img_result = getFrame.data.img_result
-                        _r.data.result_ai = "unnormal"
-                       
-                    }else{
-                        _r.data.result_ai = "unnormal"
-                    }
+                const checkNormal = Object.keys(_r.data).includes("normal") === true
+                ? parseFloat(_r.data.normal)
+                : (1 - parseFloat(_r.data.result))*100 
+
+                //เช็คว่าเป็น tuberculosis หรือไม่เพื่อไปเอาภาพตีกรอบ
+                if (Object.keys(_r.data).includes("tuberculosis") && checkNormal < 70){
+                    const getFrame = await ResultTuberculosisFrame(payloadImgBase64).then(response => response)
+                    _r.data.img_result = getFrame.data.img_result
+                    _r.data.normal = checkNormal
+                    _r.data.result_ai = "unnormal"
+
                 }else{
-                    _r.data.result_ai = "normal"
+                    if (checkNormal < 50){
+                        _r.data.normal = checkNormal
+                        _r.data.result_ai = "unnormal"
+                    }else{
+                        _r.data.normal = checkNormal
+                        _r.data.result_ai = "normal"
+                    }
                 }
                 return _r.data
-            })
+            }))
             res.status(200).json({message: "ok", status: "success", data: resultProcess})
         }).catch(e => {
             res.status(200).json({message: e.message, status: "fail", data: ""})
