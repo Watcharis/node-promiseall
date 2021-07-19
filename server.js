@@ -4,6 +4,7 @@ import axios from 'axios'
 import imageToBase64 from 'image-to-base64'
 import path from 'path'
 import dotenv from 'dotenv'
+import fs from 'fs'
 
 dotenv.config()
 
@@ -45,11 +46,24 @@ const PredictionAi = async(url, payload) => {
     return result
 }
 
-const encodeImgToBase64 = async() => {
-    const pathFolder = path.dirname(__filename)
-    let image = path.join(pathFolder, "./343050.jpg")
-    const imgBase64 = await imageToBase64(image).then(response => response)
-    return imgBase64
+const encodeImgToBase64 = async(filename) => {
+    //เช็ค type file
+    const checkFile = filename.split(".")[1] === ("jpg" || "png") ? true : false
+    if (checkFile === true){
+        //เช็ค ว่า มี file นี้อยู่จริงหรือไม่
+        const pathFolder = path.dirname(__filename)
+
+        //ต้องเเก้ให้เป็น path ที่ เก็บรูปของ stroage นั้นๆ
+        let image = path.join(pathFolder, `./${filename}`)
+        if (fs.existsSync(image)){
+            const imgBase64 = await imageToBase64(image).then(response => response)
+            return imgBase64
+        }else{
+            return "image is not exists"
+        }
+    }else{
+        return "invalid type file"
+    }
 } 
 
 const TuberculosisFrame = (payload)=>{
@@ -70,9 +84,12 @@ const ResultTuberculosisFrame = async(imgBase64) => {
 }
 
 app.get("/nodepromise", async(req, res)=> {
+    const fileName = req.query.imagename
+    // const fileName = "343050.jpg"
     const urls = await urlAi()
-    const payloadImgBase64 = await encodeImgToBase64()
-    if (payloadImgBase64 !== "" && urls.length === portAi.length){
+    const payloadImgBase64 = await encodeImgToBase64(fileName)
+
+    if (payloadImgBase64 !== "invalid type file" && payloadImgBase64 !== "image is not exists" && urls.length === portAi.length){
 
         await Promise.all(urls.map(url=> PredictionAi(url, payloadImgBase64).then(response=>response)))
         .then(async(value) => {
@@ -112,7 +129,7 @@ app.get("/nodepromise", async(req, res)=> {
             res.status(200).json({message: e.message, status: "fail", data: ""})
         })
     }else{
-        res.status(200).json({message: "Missing image base64", status: "fail", data: ""})
+        res.status(200).json({message: payloadImgBase64, status: "fail", data: ""})
     }
 })
 
